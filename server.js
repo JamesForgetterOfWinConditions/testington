@@ -140,17 +140,20 @@ async function getTorboxStream(infoHash, fileIdx = 0) {
         if (!existingTorrent) {
             console.log('Torrent not found, adding to Torbox...');
             
-            // Create form data for torrent creation
-            const formData = new FormData();
+            // Create URLSearchParams for form data (works better in Node.js)
+            const formData = new URLSearchParams();
             formData.append('magnet', `magnet:?xt=urn:btih:${infoHash}`);
             formData.append('seed', '1');
+            
+            console.log('Creating torrent with magnet:', `magnet:?xt=urn:btih:${infoHash}`);
             
             const addResult = await fetch(`${TORBOX_API_URL}/torrents/createtorrent`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${TORBOX_API_KEY}`,
+                    'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: formData
+                body: formData.toString()
             });
             
             if (addResult.ok) {
