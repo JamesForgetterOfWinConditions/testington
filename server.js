@@ -134,22 +134,46 @@ async function getTorboxStream(infoHash, fileIdx = 0) {
         console.log('Getting Torbox stream for hash:', infoHash, 'fileIdx:', fileIdx);
         
         // First, check if torrent already exists
-        const torrents = await torboxRequest('/torrents');
+        const torrents = await torboxRequest('/torrents/mylist');
         let existingTorrent = torrents.data?.find(t => t.hash === infoHash);
 
         if (!existingTorrent) {
             console.log('Torrent not found, adding to Torbox...');
-            // Add torrent to Torbox
-            const addResult = await torboxRequest('/torrents/createtorrent', 'POST', {
-                magnet: `magnet:?xt=urn:btih:${infoHash}`,
-                seed: 1
+            
+            // Create form data for torrent creation
+            const formData = new FormData();
+            formData.append('magnet', `magnet:?xt=urn:btih:${infoHash}`);
+            formData.append('seed', '1');
+            
+            const addResult = await fetch(`${TORBOX_API_URL}/torrents/createtorrent`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${TORBOX_API_KEY}`,
+                },
+                body: formData
             });
             
-            if (addResult.success) {
-                existingTorrent = addResult.data;
-                console.log('Torrent added successfully:', existingTorrent.id);
+            if (addResult.ok) {
+                const result = await addResult.json();
+                if (result.success) {
+                    // Wait a moment and check the list again
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    const updatedTorrents = await torboxRequest('/torrents/mylist');
+                    existingTorrent = updatedTorrents.data?.find(t => t.hash === infoHash);
+                    
+                    if (existingTorrent) {
+                        console.log('Torrent added successfully:', existingTorrent.id);
+                    } else {
+                        console.error('Torrent was added but not found in list');
+                        return null;
+                    }
+                } else {
+                    console.error('Failed to add torrent:', result);
+                    return null;
+                }
             } else {
-                console.error('Failed to add torrent:', addResult);
+                const errorText = await addResult.text();
+                console.error('Failed to add torrent:', addResult.status, errorText);
                 return null;
             }
         } else {
@@ -157,14 +181,41 @@ async function getTorboxStream(infoHash, fileIdx = 0) {
         }
 
         // Check if torrent is ready for streaming
-        if (existingTorrent.download_state === 'downloaded') {
+        if (existingTorrent.download_state === 'completed' || 
+            existingTorrent.download_state === 'uploading' ||
+            existingTorrent.download_finished) {
+            
             console.log('Torrent is ready, getting download link...');
-            const downloadInfo = await torboxRequest(`/torrents/requestdl?token=${existingTorrent.id}&file_id=${fileIdx}`);
-            if (downloadInfo.success) {
-                console.log('Got stream URL from Torbox');
-                return downloadInfo.data;
+            
+            // Find the correct file if multiple files exist
+            let targetFileId = fileIdx;
+            if (existingTorrent.files && existingTorrent.files.length > 0) {
+                if (fileIdx < existingTorrent.files.length) {
+                    targetFileId = existingTorrent.files[fileIdx].id;
+                } else {
+                    // Default to first file if index is out of bounds
+                    targetFileId = existingTorrent.files[0].id;
+                }
+            }
+            
+            // Use the correct endpoint format with query parameters
+            const downloadUrl = `${TORBOX_API_URL}/torrents/requestdl?token=${TORBOX_API_KEY}&torrent_id=${existingTorrent.id}&file_id=${targetFileId}`;
+            console.log('Requesting download URL:', downloadUrl);
+            
+            const downloadResponse = await fetch(downloadUrl);
+            
+            if (downloadResponse.ok) {
+                const downloadInfo = await downloadResponse.json();
+                if (downloadInfo.success && downloadInfo.data) {
+                    console.log('Got stream URL from Torbox');
+                    return downloadInfo.data;
+                } else {
+                    console.error('Failed to get download link:', downloadInfo);
+                    return null;
+                }
             } else {
-                console.error('Failed to get download link:', downloadInfo);
+                const errorText = await downloadResponse.text();
+                console.error('Failed to get download link:', downloadResponse.status, errorText);
                 return null;
             }
         } else {
@@ -313,16 +364,6 @@ export default async function handler(req, res) {
             
             console.log('Stream request did not match pattern');
             return res.json({ streams: [] });
-        }
-
-        // Health check
-        if (fullPath === 'health') {
-            return res.json({ 
-                status: 'OK', 
-                timestamp: new Date().toISOString(),
-                torboxConfigured: !!TORBOX_API_KEY,
-                path: fullPath
-            });
         }
 
         // 404 for unknown paths
