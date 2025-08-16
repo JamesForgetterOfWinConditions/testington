@@ -1,5 +1,11 @@
 // File: /api/[...path].js
 
+// File: /api/[...path].js
+
+// Torbox API configuration
+const TORBOX_API_URL = 'https://api.torbox.app/v1/api';
+const TORBOX_API_KEY = process.env.TORBOX_API_KEY;
+
 // Simple episode data registry
 const episodeRegistry = {
     "RO_1": {
@@ -9,8 +15,88 @@ const episodeRegistry = {
                 "fileIdx": 0
             }
         ]
+    },
+    "RO_2": {
+        "streams": [
+            {
+                "infoHash": "your_hash_for_ro_2",
+                "fileIdx": 0
+            }
+        ]
+    },
+    "RO_3": {
+        "streams": [
+            {
+                "infoHash": "your_hash_for_ro_3",
+                "fileIdx": 0
+            }
+// Helper function to make authenticated requests to Torbox using fetch
+async function torboxRequest(endpoint, method = 'GET', data = null) {
+    if (!TORBOX_API_KEY) {
+        throw new Error('Torbox API key not configured');
     }
-};
+
+    const config = {
+        method,
+        headers: {
+            'Authorization': `Bearer ${TORBOX_API_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    };
+
+    if (data && method !== 'GET') {
+        config.body = JSON.stringify(data);
+    }
+
+    const response = await fetch(`${TORBOX_API_URL}${endpoint}`, config);
+    
+    if (!response.ok) {
+        throw new Error(`Torbox API error: ${response.status} ${response.statusText}`);
+    }
+
+    return await response.json();
+}
+
+// Get or create torrent in Torbox
+async function getTorboxStream(infoHash, fileIdx = 0) {
+    try {
+        // First, check if torrent already exists
+        const torrents = await torboxRequest('/torrents');
+        let existingTorrent = torrents.data?.find(t => t.hash === infoHash);
+
+        if (!existingTorrent) {
+            // Add torrent to Torbox
+            const addResult = await torboxRequest('/torrents/createtorrent', 'POST', {
+                magnet: `magnet:?xt=urn:btih:${infoHash}`,
+                seed: 1
+            });
+            
+            if (addResult.success) {
+                existingTorrent = addResult.data;
+            } else {
+                throw new Error('Failed to add torrent to Torbox');
+            }
+        }
+
+        // Wait for torrent to be ready and get download link
+        if (existingTorrent.download_state === 'downloaded') {
+            const downloadInfo = await torboxRequest(`/torrents/requestdl?token=${existingTorrent.id}&file_id=${fileIdx}`);
+            if (downloadInfo.success) {
+                return downloadInfo.data;
+            }
+        }
+
+        return null;
+    } catch (error) {
+        console.error(`Error getting Torbox stream: ${error.message}`);
+        return null;
+    }
+}
+
+// Function to load episode data
+function loadEpisodeData(episodeId) {
+    return episodeRegistry[episodeId] || null;
+}
 
 // Addon manifest
 const manifest = {
@@ -67,7 +153,7 @@ const onePaceMeta = {
 };
 
 // Main handler function
-export default function handler(req, res) {
+export default async function handler(req, res) {
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -97,9 +183,67 @@ export default function handler(req, res) {
             return res.json(onePaceMeta);
         }
 
-        // Stream endpoint - simplified version without Torbox for now
+        // Stream endpoint - now with Torbox integration
         if (fullPath.startsWith('stream/series/')) {
-            // For now, return empty streams - we'll add Torbox integration once basic functionality works
+            const streamMatch = fullPath.match(/^stream\/series\/(.+)\.json$/);
+            if (streamMatch) {
+                const id = streamMatch[1];
+                const idParts = id.split(':');
+                
+                if (idParts.length !== 3 || idParts[0] !== 'pp_onepace') {
+                    return res.status(404).json({ error: 'Invalid stream ID format' });
+                }
+
+                const [seriesId, season, episode] = idParts;
+                
+                const episodeData = onePaceMeta.meta.videos.find(v => 
+                    v.season === parseInt(season) && v.episode === parseInt(episode)
+                );
+
+                if (!episodeData) {
+                    return res.status(404).json({ error: 'Episode not found' });
+                }
+
+                // Load episode torrent data
+                const episodeFileData = loadEpisodeData(episodeData.id);
+                if (!episodeFileData || !episodeFileData.streams || episodeFileData.streams.length === 0) {
+                    return res.json({ streams: [] });
+                }
+
+                // Process streams with Torbox
+                const streams = [];
+                
+                if (TORBOX_API_KEY) {
+                    for (const streamData of episodeFileData.streams) {
+                        if (streamData.infoHash) {
+                            try {
+                                const streamUrl = await getTorboxStream(streamData.infoHash, streamData.fileIdx || 0);
+                                
+                                if (streamUrl) {
+                                    streams.push({
+                                        name: `One Pace - ${episodeData.title}`,
+                                        title: `S${season}E${episode} - ${episodeData.title}`,
+                                        url: streamUrl,
+                                        behaviorHints: {
+                                            bingeGroup: "one-pace",
+                                            notWebReady: false
+                                        }
+                                    });
+                                }
+                            } catch (torboxError) {
+                                console.error('Torbox error for episode:', episodeData.id, torboxError.message);
+                                // Continue to next stream instead of failing completely
+                            }
+                        }
+                    }
+                } else {
+                    console.warn('Torbox API key not configured, returning empty streams');
+                }
+
+                return res.json({ streams });
+            }
+            
+            // Fallback for malformed stream requests
             return res.json({ streams: [] });
         }
 
