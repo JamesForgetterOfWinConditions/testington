@@ -78,25 +78,41 @@ const onePaceMeta = {
     }
 };
 
-// Function to load episode torrent data from JSON files
+// Episode data registry - you can populate this with your episode data
+const episodeRegistry = {
+    "RO_1": {
+        "streams": [
+            {
+                "infoHash": "cdab4a928dbbff643bbe5531f216eb36a60c85af",
+                "fileIdx": 0
+            }
+        ]
+    },
+    "RO_2": {
+        "streams": [
+            {
+                "infoHash": "your_hash_for_ro_2",
+                "fileIdx": 0
+            }
+        ]
+    },
+    "RO_3": {
+        "streams": [
+            {
+                "infoHash": "your_hash_for_ro_3", 
+                "fileIdx": 0
+            }
+        ]
+    }
+    // Add more episodes here...
+};
+
+// Function to load episode torrent data
 async function loadEpisodeData(episodeId) {
     try {
-        // In Vercel, we need to use dynamic imports or include files in the deployment
-        // For now, we'll use a simple mapping approach that can be extended
-        const fs = require('fs');
-        const path = require('path');
-        
-        // Try to read the episode file from the episodes folder
-        const episodeFilePath = path.join(process.cwd(), 'episodes', `${episodeId}.json`);
-        
-        if (fs.existsSync(episodeFilePath)) {
-            const episodeData = JSON.parse(fs.readFileSync(episodeFilePath, 'utf8'));
-            return episodeData;
-        }
-        
-        return null;
+        return episodeRegistry[episodeId] || null;
     } catch (error) {
-        console.error(`Error loading episode data for ${episodeId}:`, error);
+        console.error(`Error loading episode data for ${episodeId}:`, error.message);
         return null;
     }
 }
