@@ -5,6 +5,19 @@ const axios = require('axios');
 const TORBOX_API_URL = 'https://api.torbox.app/v1/api';
 const TORBOX_API_KEY = process.env.TORBOX_API_KEY;
 
+// Episode data registry
+const episodeRegistry = {
+    "RO_1": {
+        "streams": [
+            {
+                "infoHash": "cdab4a928dbbff643bbe5531f216eb36a60c85af",
+                "fileIdx": 0
+            }
+        ]
+    }
+    // Add more episodes here...
+};
+
 // Addon manifest
 const manifest = {
     id: "community.onepace.torbox",
@@ -52,22 +65,15 @@ const onePaceMeta = {
         "logo": "https://onepace.net/_next/static/media/logo.0bbcd6da.svg",
         "background": "https://wallpaperaccess.com/full/17350.jpg",
         "videos": [
-            // Romance Dawn Arc (Season 1)
             { "season": 1, "episode": 1, "id": "RO_1", "title": "Romance Dawn, the Dawn of an Adventure" },
             { "season": 1, "episode": 2, "id": "RO_2", "title": "Romance Dawn, Enter the Great Pirate Era" },
             { "season": 1, "episode": 3, "id": "RO_3", "title": "Romance Dawn, Defeat the Pirate Ganzack" },
-            
-            // Orange Town Arc (Season 2)
             { "season": 2, "episode": 1, "id": "OT_1", "title": "Orange Town, Buggy the Clown" },
             { "season": 2, "episode": 2, "id": "OT_2", "title": "Orange Town, The Great Swordsman Appears" },
-            
-            // Syrup Village Arc (Season 3)
             { "season": 3, "episode": 1, "id": "SV_1", "title": "Syrup Village, Usopp the Liar" },
             { "season": 3, "episode": 2, "id": "SV_2", "title": "Syrup Village, The Weird Butler Klahadore" },
             { "season": 3, "episode": 3, "id": "SV_3", "title": "Syrup Village, Expose the Plot" },
             { "season": 3, "episode": 4, "id": "SV_4", "title": "Syrup Village, The Battle on the Slope" },
-            
-            // Baratie Arc (Season 4)
             { "season": 4, "episode": 1, "id": "BA_1", "title": "Baratie, The Cook and the Pirate" },
             { "season": 4, "episode": 2, "id": "BA_2", "title": "Baratie, The Strongest Swordsman in the World" },
             { "season": 4, "episode": 3, "id": "BA_3", "title": "Baratie, Hawk-Eye Mihawk" },
@@ -78,101 +84,56 @@ const onePaceMeta = {
     }
 };
 
-// Episode data registry - you can populate this with your episode data
-const episodeRegistry = {
-    "RO_1": {
-        "streams": [
-            {
-                "infoHash": "cdab4a928dbbff643bbe5531f216eb36a60c85af",
-                "fileIdx": 0
-            }
-        ]
-    },
-    "RO_2": {
-        "streams": [
-            {
-                "infoHash": "your_hash_for_ro_2",
-                "fileIdx": 0
-            }
-        ]
-    },
-    "RO_3": {
-        "streams": [
-            {
-                "infoHash": "your_hash_for_ro_3", 
-                "fileIdx": 0
-            }
-        ]
-    }
-    // Add more episodes here...
-};
-
-// Function to load episode torrent data
-async function loadEpisodeData(episodeId) {
-    try {
-        return episodeRegistry[episodeId] || null;
-    } catch (error) {
-        console.error(`Error loading episode data for ${episodeId}:`, error.message);
-        return null;
-    }
+// Function to load episode data
+function loadEpisodeData(episodeId) {
+    return episodeRegistry[episodeId] || null;
 }
 
 // Helper function to make authenticated requests to Torbox
 async function torboxRequest(endpoint, method = 'GET', data = null) {
-    try {
-        const config = {
-            method,
-            url: `${TORBOX_API_URL}${endpoint}`,
-            headers: {
-                'Authorization': `Bearer ${TORBOX_API_KEY}`,
-                'Content-Type': 'application/json'
-            }
-        };
-
-        if (data && method !== 'GET') {
-            config.data = data;
+    const config = {
+        method,
+        url: `${TORBOX_API_URL}${endpoint}`,
+        headers: {
+            'Authorization': `Bearer ${TORBOX_API_KEY}`,
+            'Content-Type': 'application/json'
         }
+    };
 
-        const response = await axios(config);
-        return response.data;
-    } catch (error) {
-        console.error(`Torbox API error: ${error.message}`);
-        throw error;
+    if (data && method !== 'GET') {
+        config.data = data;
     }
+
+    const response = await axios(config);
+    return response.data;
 }
 
 // Get or create torrent in Torbox
 async function getTorboxStream(infoHash, fileIdx = 0) {
-    try {
-        const torrents = await torboxRequest('/torrents');
-        let existingTorrent = torrents.data?.find(t => t.hash === infoHash);
+    const torrents = await torboxRequest('/torrents');
+    let existingTorrent = torrents.data?.find(t => t.hash === infoHash);
 
-        if (!existingTorrent) {
-            const addResult = await torboxRequest('/torrents/createtorrent', 'POST', {
-                magnet: `magnet:?xt=urn:btih:${infoHash}`,
-                seed: 1
-            });
-            
-            if (addResult.success) {
-                existingTorrent = addResult.data;
-            } else {
-                throw new Error('Failed to add torrent to Torbox');
-            }
+    if (!existingTorrent) {
+        const addResult = await torboxRequest('/torrents/createtorrent', 'POST', {
+            magnet: `magnet:?xt=urn:btih:${infoHash}`,
+            seed: 1
+        });
+        
+        if (addResult.success) {
+            existingTorrent = addResult.data;
+        } else {
+            throw new Error('Failed to add torrent to Torbox');
         }
-
-        if (existingTorrent.download_state === 'downloaded') {
-            // Use the specific file index from the episode data
-            const downloadInfo = await torboxRequest(`/torrents/requestdl?token=${existingTorrent.id}&file_id=${fileIdx}`);
-            if (downloadInfo.success) {
-                return downloadInfo.data;
-            }
-        }
-
-        return null;
-    } catch (error) {
-        console.error(`Error getting Torbox stream: ${error.message}`);
-        return null;
     }
+
+    if (existingTorrent.download_state === 'downloaded') {
+        const downloadInfo = await torboxRequest(`/torrents/requestdl?token=${existingTorrent.id}&file_id=${fileIdx}`);
+        if (downloadInfo.success) {
+            return downloadInfo.data;
+        }
+    }
+
+    return null;
 }
 
 // Main handler function
@@ -187,22 +148,22 @@ export default async function handler(req, res) {
         return;
     }
 
-    const { path } = req.query;
-    const fullPath = Array.isArray(path) ? path.join('/') : (path || '');
-
     try {
+        const { path } = req.query;
+        const fullPath = Array.isArray(path) ? path.join('/') : (path || '');
+
         // Root path - return manifest
         if (fullPath === '' || fullPath === 'manifest.json') {
             return res.json(manifest);
         }
 
         // Catalog endpoint
-        if (fullPath.match(/^catalog\/series\/onepace\.json$/)) {
+        if (fullPath === 'catalog/series/onepace.json') {
             return res.json(seriesCatalog);
         }
 
         // Meta endpoint
-        if (fullPath.match(/^meta\/series\/pp_onepace\.json$/)) {
+        if (fullPath === 'meta/series/pp_onepace.json') {
             return res.json(onePaceMeta);
         }
 
@@ -226,28 +187,33 @@ export default async function handler(req, res) {
                 return res.status(404).json({ error: 'Episode not found' });
             }
 
-            // Load episode torrent data from JSON file
-            const episodeFileData = await loadEpisodeData(episodeData.id);
+            // Load episode torrent data
+            const episodeFileData = loadEpisodeData(episodeData.id);
             if (!episodeFileData || !episodeFileData.streams || episodeFileData.streams.length === 0) {
                 return res.json({ streams: [] });
             }
 
-            // Process all streams from the episode file
+            // Process streams
             const streams = [];
             for (const streamData of episodeFileData.streams) {
-                if (streamData.infoHash) {
-                    const streamUrl = await getTorboxStream(streamData.infoHash, streamData.fileIdx || 0);
-                    
-                    if (streamUrl) {
-                        streams.push({
-                            name: `One Pace - ${episodeData.title}`,
-                            title: `S${season}E${episode} - ${episodeData.title}`,
-                            url: streamUrl,
-                            behaviorHints: {
-                                bingeGroup: "one-pace",
-                                notWebReady: false
-                            }
-                        });
+                if (streamData.infoHash && TORBOX_API_KEY) {
+                    try {
+                        const streamUrl = await getTorboxStream(streamData.infoHash, streamData.fileIdx || 0);
+                        
+                        if (streamUrl) {
+                            streams.push({
+                                name: `One Pace - ${episodeData.title}`,
+                                title: `S${season}E${episode} - ${episodeData.title}`,
+                                url: streamUrl,
+                                behaviorHints: {
+                                    bingeGroup: "one-pace",
+                                    notWebReady: false
+                                }
+                            });
+                        }
+                    } catch (torboxError) {
+                        console.error('Torbox error:', torboxError.message);
+                        // Continue to next stream instead of failing completely
                     }
                 }
             }
@@ -265,6 +231,6 @@ export default async function handler(req, res) {
 
     } catch (error) {
         console.error('Handler error:', error);
-        return res.status(500).json({ error: 'Internal server error' });
+        return res.status(500).json({ error: 'Internal server error', details: error.message });
     }
 }
