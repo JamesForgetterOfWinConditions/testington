@@ -1,17 +1,9 @@
-const express = require('express');
-const cors = require('cors');
+// File: /api/[...path].js
 const axios = require('axios');
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Enable CORS for all routes
-app.use(cors());
-app.use(express.json());
 
 // Torbox API configuration
 const TORBOX_API_URL = 'https://api.torbox.app/v1/api';
-const TORBOX_API_KEY = process.env.TORBOX_API_KEY; // Set this in your Vercel environment variables
+const TORBOX_API_KEY = process.env.TORBOX_API_KEY;
 
 // Addon manifest
 const manifest = {
@@ -81,22 +73,33 @@ const onePaceMeta = {
             { "season": 4, "episode": 3, "id": "BA_3", "title": "Baratie, Hawk-Eye Mihawk" },
             { "season": 4, "episode": 4, "id": "BA_4", "title": "Baratie, Gin the Demon" },
             { "season": 4, "episode": 5, "id": "BA_5", "title": "Baratie, Pearl-man's Iron Wall" },
-            { "season": 4, "episode": 6, "id": "BA_6", "title": "Baratie, Don't Take My Dream Away" },
-            
-            // Add more episodes as needed...
+            { "season": 4, "episode": 6, "id": "BA_6", "title": "Baratie, Don't Take My Dream Away" }
         ]
     }
 };
 
-// Episode to torrent hash mapping (you'll need to populate this with actual hashes)
-const episodeTorrents = {
-    "RO_1": "cdab4a928dbbff643bbe5531f216eb36a60c85af",
-    "RO_2": "cdab4a928dbbff643bbe5531f216eb36a60c85af",
-    "RO_3": "actual_torrent_hash_for_romance_dawn_3",
-    "OT_1": "actual_torrent_hash_for_orange_town_1",
-    "OT_2": "actual_torrent_hash_for_orange_town_2",
-    // Add more mappings as needed...
-};
+// Function to load episode torrent data from JSON files
+async function loadEpisodeData(episodeId) {
+    try {
+        // In Vercel, we need to use dynamic imports or include files in the deployment
+        // For now, we'll use a simple mapping approach that can be extended
+        const fs = require('fs');
+        const path = require('path');
+        
+        // Try to read the episode file from the episodes folder
+        const episodeFilePath = path.join(process.cwd(), 'episodes', `${episodeId}.json`);
+        
+        if (fs.existsSync(episodeFilePath)) {
+            const episodeData = JSON.parse(fs.readFileSync(episodeFilePath, 'utf8'));
+            return episodeData;
+        }
+        
+        return null;
+    } catch (error) {
+        console.error(`Error loading episode data for ${episodeId}:`, error);
+        return null;
+    }
+}
 
 // Helper function to make authenticated requests to Torbox
 async function torboxRequest(endpoint, method = 'GET', data = null) {
@@ -123,16 +126,14 @@ async function torboxRequest(endpoint, method = 'GET', data = null) {
 }
 
 // Get or create torrent in Torbox
-async function getTorboxStream(torrentHash) {
+async function getTorboxStream(infoHash, fileIdx = 0) {
     try {
-        // First, check if torrent already exists
         const torrents = await torboxRequest('/torrents');
-        let existingTorrent = torrents.data?.find(t => t.hash === torrentHash);
+        let existingTorrent = torrents.data?.find(t => t.hash === infoHash);
 
         if (!existingTorrent) {
-            // Add torrent to Torbox
             const addResult = await torboxRequest('/torrents/createtorrent', 'POST', {
-                magnet: `magnet:?xt=urn:btih:${torrentHash}`,
+                magnet: `magnet:?xt=urn:btih:${infoHash}`,
                 seed: 1
             });
             
@@ -143,9 +144,9 @@ async function getTorboxStream(torrentHash) {
             }
         }
 
-        // Wait for torrent to be ready and get download link
         if (existingTorrent.download_state === 'downloaded') {
-            const downloadInfo = await torboxRequest(`/torrents/requestdl?token=${existingTorrent.id}&file_id=1`);
+            // Use the specific file index from the episode data
+            const downloadInfo = await torboxRequest(`/torrents/requestdl?token=${existingTorrent.id}&file_id=${fileIdx}`);
             if (downloadInfo.success) {
                 return downloadInfo.data;
             }
@@ -158,119 +159,96 @@ async function getTorboxStream(torrentHash) {
     }
 }
 
-// Routes
+// Main handler function
+export default async function handler(req, res) {
+    // Set CORS headers
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-// Manifest endpoint
-app.get('/manifest.json', (req, res) => {
-    res.json(manifest);
-});
-
-app.get('/', (req, res) => {
-    res.json(manifest);
-});
-
-// Catalog endpoint
-app.get('/catalog/:type/:id.json', (req, res) => {
-    const { type, id } = req.params;
-    
-    if (type === 'series' && id === 'onepace') {
-        res.json(seriesCatalog);
-    } else {
-        res.status(404).json({ error: 'Catalog not found' });
-    }
-});
-
-// Meta endpoint
-app.get('/meta/:type/:id.json', (req, res) => {
-    const { type, id } = req.params;
-    
-    if (type === 'series' && id === 'pp_onepace') {
-        res.json(onePaceMeta);
-    } else {
-        res.status(404).json({ error: 'Meta not found' });
-    }
-});
-
-// Stream endpoint
-app.get('/stream/:type/:id.json', async (req, res) => {
-    const { type, id } = req.params;
-    
-    if (type !== 'series') {
-        return res.status(404).json({ error: 'Only series type supported' });
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
     }
 
-    // Parse the ID to extract series ID and episode info
-    // Expected format: pp_onepace:season:episode
-    const idParts = id.split(':');
-    if (idParts.length !== 3 || idParts[0] !== 'pp_onepace') {
-        return res.status(404).json({ error: 'Invalid stream ID format' });
-    }
-
-    const [seriesId, season, episode] = idParts;
-    
-    // Find the episode in our metadata
-    const episodeData = onePaceMeta.meta.videos.find(v => 
-        v.season === parseInt(season) && v.episode === parseInt(episode)
-    );
-
-    if (!episodeData) {
-        return res.status(404).json({ error: 'Episode not found' });
-    }
-
-    const torrentHash = episodeTorrents[episodeData.id];
-    if (!torrentHash) {
-        return res.status(404).json({ error: 'Torrent not available for this episode' });
-    }
+    const { path } = req.query;
+    const fullPath = Array.isArray(path) ? path.join('/') : (path || '');
 
     try {
-        const streamUrl = await getTorboxStream(torrentHash);
-        
-        if (streamUrl) {
-            res.json({
-                streams: [
-                    {
-                        name: `One Pace - ${episodeData.title}`,
-                        title: `S${season}E${episode} - ${episodeData.title}`,
-                        url: streamUrl,
-                        behaviorHints: {
-                            bingeGroup: "one-pace",
-                            notWebReady: false
-                        }
-                    }
-                ]
-            });
-        } else {
-            res.json({ streams: [] });
+        // Root path - return manifest
+        if (fullPath === '' || fullPath === 'manifest.json') {
+            return res.json(manifest);
         }
+
+        // Catalog endpoint
+        if (fullPath.match(/^catalog\/series\/onepace\.json$/)) {
+            return res.json(seriesCatalog);
+        }
+
+        // Meta endpoint
+        if (fullPath.match(/^meta\/series\/pp_onepace\.json$/)) {
+            return res.json(onePaceMeta);
+        }
+
+        // Stream endpoint
+        const streamMatch = fullPath.match(/^stream\/series\/(.+)\.json$/);
+        if (streamMatch) {
+            const id = streamMatch[1];
+            const idParts = id.split(':');
+            
+            if (idParts.length !== 3 || idParts[0] !== 'pp_onepace') {
+                return res.status(404).json({ error: 'Invalid stream ID format' });
+            }
+
+            const [seriesId, season, episode] = idParts;
+            
+            const episodeData = onePaceMeta.meta.videos.find(v => 
+                v.season === parseInt(season) && v.episode === parseInt(episode)
+            );
+
+            if (!episodeData) {
+                return res.status(404).json({ error: 'Episode not found' });
+            }
+
+            // Load episode torrent data from JSON file
+            const episodeFileData = await loadEpisodeData(episodeData.id);
+            if (!episodeFileData || !episodeFileData.streams || episodeFileData.streams.length === 0) {
+                return res.json({ streams: [] });
+            }
+
+            // Process all streams from the episode file
+            const streams = [];
+            for (const streamData of episodeFileData.streams) {
+                if (streamData.infoHash) {
+                    const streamUrl = await getTorboxStream(streamData.infoHash, streamData.fileIdx || 0);
+                    
+                    if (streamUrl) {
+                        streams.push({
+                            name: `One Pace - ${episodeData.title}`,
+                            title: `S${season}E${episode} - ${episodeData.title}`,
+                            url: streamUrl,
+                            behaviorHints: {
+                                bingeGroup: "one-pace",
+                                notWebReady: false
+                            }
+                        });
+                    }
+                }
+            }
+
+            return res.json({ streams });
+        }
+
+        // Health check
+        if (fullPath === 'health') {
+            return res.json({ status: 'OK', timestamp: new Date().toISOString() });
+        }
+
+        // 404 for unknown paths
+        return res.status(404).json({ error: 'Endpoint not found' });
+
     } catch (error) {
-        console.error(`Stream error: ${error.message}`);
-        res.json({ streams: [] });
+        console.error('Handler error:', error);
+        return res.status(500).json({ error: 'Internal server error' });
     }
-});
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Something went wrong!' });
-});
-
-// 404 handler
-app.use((req, res) => {
-    res.status(404).json({ error: 'Endpoint not found' });
-});
-
-// Start server
-if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => {
-        console.log(`One Pace Stremio addon running on port ${PORT}`);
-        console.log(`Manifest: http://localhost:${PORT}/manifest.json`);
-    });
 }
-
-// Export for Vercel
-module.exports = app;
