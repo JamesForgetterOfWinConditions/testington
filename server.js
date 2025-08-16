@@ -121,10 +121,23 @@ export default async function handler(req, res) {
     }
 
     try {
-        const { path } = req.query;
-        const fullPath = Array.isArray(path) ? path.join('/') : (path || '');
+        // Use req.url instead of query params for more reliable path parsing
+        let fullPath = req.url;
         
-        console.log('Request path:', fullPath, 'Query:', req.query);
+        // Remove query parameters and leading slash
+        if (fullPath.includes('?')) {
+            fullPath = fullPath.split('?')[0];
+        }
+        if (fullPath.startsWith('/')) {
+            fullPath = fullPath.substring(1);
+        }
+        
+        // Remove /api/ prefix if present
+        if (fullPath.startsWith('api/')) {
+            fullPath = fullPath.substring(4);
+        }
+        
+        console.log('Request URL:', req.url, 'Parsed path:', fullPath, 'Query:', req.query);
 
         // Root path - return manifest
         if (!fullPath || fullPath === '' || fullPath === 'manifest.json') {
@@ -140,7 +153,7 @@ export default async function handler(req, res) {
                 timestamp: new Date().toISOString(),
                 torboxConfigured: !!TORBOX_API_KEY,
                 path: fullPath,
-                rawPath: path
+                rawPath: req.url
             });
         }
 
