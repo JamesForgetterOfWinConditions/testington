@@ -17,16 +17,16 @@ const episodeRegistry = {
     "RO_2": {
         "streams": [
             {
-                "infoHash": "cdab4a928dbbff643bbe5531f216eb36a60c85af",
-                "fileIdx": 1
+                "infoHash": "your_hash_for_ro_2",
+                "fileIdx": 0
             }
         ]
     },
     "RO_3": {
         "streams": [
             {
-                "infoHash": "cdab4a928dbbff643bbe5531f216eb36a60c85af",
-                "fileIdx": 2
+                "infoHash": "your_hash_for_ro_3",
+                "fileIdx": 0
             }
         ]
     }
@@ -109,9 +109,14 @@ async function torboxRequest(endpoint, method = 'GET', data = null) {
         config.body = JSON.stringify(data);
     }
 
-    const response = await fetch(`${TORBOX_API_URL}${endpoint}`, config);
+    const fullUrl = `${TORBOX_API_URL}${endpoint}`;
+    console.log('Making Torbox request to:', fullUrl);
+    
+    const response = await fetch(fullUrl, config);
     
     if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Torbox API response:', response.status, errorText);
         throw new Error(`Torbox API error: ${response.status} ${response.statusText}`);
     }
 
@@ -241,22 +246,32 @@ export default async function handler(req, res) {
             if (streamMatch) {
                 const id = streamMatch[1];
                 console.log('Stream ID:', id);
-                const idParts = id.split(':');
                 
-                if (idParts.length !== 3 || idParts[0] !== 'pp_onepace') {
-                    console.log('Invalid stream ID format:', idParts);
-                    return res.status(404).json({ error: 'Invalid stream ID format' });
+                // Handle both formats: "pp_onepace:1:1" and direct episode IDs like "RO_1"
+                let episodeData;
+                
+                if (id.includes(':')) {
+                    // Standard format: pp_onepace:season:episode
+                    const idParts = id.split(':');
+                    if (idParts.length !== 3 || idParts[0] !== 'pp_onepace') {
+                        console.log('Invalid stream ID format:', idParts);
+                        return res.status(404).json({ error: 'Invalid stream ID format' });
+                    }
+
+                    const [seriesId, season, episode] = idParts;
+                    console.log('Parsed:', { seriesId, season, episode });
+                    
+                    episodeData = onePaceMeta.meta.videos.find(v => 
+                        v.season === parseInt(season) && v.episode === parseInt(episode)
+                    );
+                } else {
+                    // Direct episode ID format: RO_1, OT_1, etc.
+                    console.log('Direct episode ID format:', id);
+                    episodeData = onePaceMeta.meta.videos.find(v => v.id === id);
                 }
 
-                const [seriesId, season, episode] = idParts;
-                console.log('Parsed:', { seriesId, season, episode });
-                
-                const episodeData = onePaceMeta.meta.videos.find(v => 
-                    v.season === parseInt(season) && v.episode === parseInt(episode)
-                );
-
                 if (!episodeData) {
-                    console.log('Episode not found for season:', season, 'episode:', episode);
+                    console.log('Episode not found for ID:', id);
                     return res.status(404).json({ error: 'Episode not found' });
                 }
 
@@ -271,7 +286,7 @@ export default async function handler(req, res) {
 
                 console.log('Episode stream data:', episodeFileData);
 
-                // Process streams - start with mock URLs
+                // Process streams
                 const streams = [];
                 
                 for (const streamData of episodeFileData.streams) {
@@ -281,7 +296,7 @@ export default async function handler(req, res) {
                         if (streamUrl) {
                             streams.push({
                                 name: `One Pace - ${episodeData.title}`,
-                                title: `S${season}E${episode} - ${episodeData.title}`,
+                                title: `${episodeData.title}`,
                                 url: streamUrl,
                                 behaviorHints: {
                                     bingeGroup: "one-pace",
