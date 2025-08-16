@@ -123,48 +123,75 @@ export default async function handler(req, res) {
     try {
         const { path } = req.query;
         const fullPath = Array.isArray(path) ? path.join('/') : (path || '');
+        
+        console.log('Request path:', fullPath, 'Query:', req.query);
 
         // Root path - return manifest
-        if (fullPath === '' || fullPath === 'manifest.json') {
+        if (!fullPath || fullPath === '' || fullPath === 'manifest.json') {
+            console.log('Serving manifest');
             return res.json(manifest);
+        }
+
+        // Health check - must come before other checks
+        if (fullPath === 'health') {
+            console.log('Serving health check');
+            return res.json({ 
+                status: 'OK', 
+                timestamp: new Date().toISOString(),
+                torboxConfigured: !!TORBOX_API_KEY,
+                path: fullPath,
+                rawPath: path
+            });
         }
 
         // Catalog endpoint
         if (fullPath === 'catalog/series/onepace.json') {
+            console.log('Serving catalog');
             return res.json(seriesCatalog);
         }
 
         // Meta endpoint
         if (fullPath === 'meta/series/pp_onepace.json') {
+            console.log('Serving meta');
             return res.json(onePaceMeta);
         }
 
         // Stream endpoint
         if (fullPath.startsWith('stream/series/')) {
+            console.log('Processing stream request for:', fullPath);
             const streamMatch = fullPath.match(/^stream\/series\/(.+)\.json$/);
             if (streamMatch) {
                 const id = streamMatch[1];
+                console.log('Stream ID:', id);
                 const idParts = id.split(':');
                 
                 if (idParts.length !== 3 || idParts[0] !== 'pp_onepace') {
+                    console.log('Invalid stream ID format:', idParts);
                     return res.status(404).json({ error: 'Invalid stream ID format' });
                 }
 
                 const [seriesId, season, episode] = idParts;
+                console.log('Parsed:', { seriesId, season, episode });
                 
                 const episodeData = onePaceMeta.meta.videos.find(v => 
                     v.season === parseInt(season) && v.episode === parseInt(episode)
                 );
 
                 if (!episodeData) {
+                    console.log('Episode not found for season:', season, 'episode:', episode);
                     return res.status(404).json({ error: 'Episode not found' });
                 }
+
+                console.log('Found episode:', episodeData.id);
 
                 // Load episode torrent data
                 const episodeFileData = loadEpisodeData(episodeData.id);
                 if (!episodeFileData || !episodeFileData.streams || episodeFileData.streams.length === 0) {
+                    console.log('No stream data for episode:', episodeData.id);
                     return res.json({ streams: [] });
                 }
+
+                console.log('Episode stream data:', episodeFileData);
 
                 // Process streams - start with mock URLs
                 const streams = [];
@@ -187,9 +214,11 @@ export default async function handler(req, res) {
                     }
                 }
 
+                console.log('Returning streams:', streams.length);
                 return res.json({ streams });
             }
             
+            console.log('Stream request did not match pattern');
             return res.json({ streams: [] });
         }
 
