@@ -155,17 +155,41 @@ async function getTorboxStream(infoHash, fileIdx = 0) {
             
             if (addResult.ok) {
                 const result = await addResult.json();
+                console.log('Add torrent result:', result);
+                
                 if (result.success) {
-                    // Wait a moment and check the list again
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    const updatedTorrents = await torboxRequest('/torrents/mylist');
-                    existingTorrent = updatedTorrents.data?.find(t => t.hash === infoHash);
-                    
-                    if (existingTorrent) {
-                        console.log('Torrent added successfully:', existingTorrent.id);
+                    // If the API returns torrent data directly, use it
+                    if (result.data && result.data.id) {
+                        existingTorrent = result.data;
+                        console.log('Got torrent data from creation response:', existingTorrent.id);
                     } else {
-                        console.error('Torrent was added but not found in list');
-                        return null;
+                        // Otherwise wait and check the list multiple times
+                        let attempts = 0;
+                        const maxAttempts = 5;
+                        
+                        while (!existingTorrent && attempts < maxAttempts) {
+                            await new Promise(resolve => setTimeout(resolve, 2000 * (attempts + 1))); // Increasing delay
+                            attempts++;
+                            
+                            console.log(`Checking torrent list, attempt ${attempts}...`);
+                            const updatedTorrents = await torboxRequest('/torrents/mylist');
+                            existingTorrent = updatedTorrents.data?.find(t => 
+                                t.hash === infoHash || 
+                                t.hash === infoHash.toLowerCase() || 
+                                t.hash === infoHash.toUpperCase()
+                            );
+                            
+                            if (existingTorrent) {
+                                console.log('Found torrent in list:', existingTorrent.id);
+                                break;
+                            }
+                        }
+                        
+                        if (!existingTorrent) {
+                            console.error('Torrent was added but not found in list after', maxAttempts, 'attempts');
+                            console.log('Available torrents:', updatedTorrents?.data?.map(t => ({ id: t.id, hash: t.hash, name: t.name })));
+                            return null;
+                        }
                     }
                 } else {
                     console.error('Failed to add torrent:', result);
