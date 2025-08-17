@@ -4,33 +4,25 @@
 const TORBOX_API_URL = 'https://api.torbox.app/v1/api';
 const TORBOX_API_KEY = process.env.TORBOX_API_KEY;
 
-// Simple episode data registry
-const episodeRegistry = {
-    "RO_1": {
-        "streams": [
-            {
-                "infoHash": "cdab4a928dbbff643bbe5531f216eb36a60c85af",
-                "fileIdx": 0
-            }
-        ]
-    },
-    "RO_2": {
-        "streams": [
-            {
-                "infoHash": "your_hash_for_ro_2",
-                "fileIdx": 0
-            }
-        ]
-    },
-    "RO_3": {
-        "streams": [
-            {
-                "infoHash": "your_hash_for_ro_3",
-                "fileIdx": 0
-            }
-        ]
+// Function to load episode data from individual JSON files
+async function loadEpisodeData(episodeId) {
+    try {
+        const fs = require('fs').promises;
+        const path = require('path');
+        
+        const filePath = path.join(process.cwd(), 'stream', 'series', `${episodeId}.json`);
+        console.log('Loading episode data from:', filePath);
+        
+        const fileContent = await fs.readFile(filePath, 'utf8');
+        const episodeData = JSON.parse(fileContent);
+        
+        console.log('Loaded episode data for', episodeId, ':', episodeData);
+        return episodeData;
+    } catch (error) {
+        console.error(`Error loading episode data for ${episodeId}:`, error.message);
+        return null;
     }
-};
+}
 
 // Addon manifest
 const manifest = {
