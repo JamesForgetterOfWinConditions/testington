@@ -88,9 +88,9 @@ async function loadOnePaceMeta() {
 }
 
 // Function to load episode data
-function loadEpisodeData(episodeId) {
-    return episodeRegistry[episodeId] || null;
-}
+//function loadEpisodeData(episodeId) {
+//    return episodeRegistry[episodeId] || null;
+//}
 
 // Simple Torbox request function using fetch
 async function torboxRequest(endpoint, method = 'GET', data = null) {
