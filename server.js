@@ -258,7 +258,7 @@ async function getTorboxStream(infoHash, fileIdx = 0) {
 }
 
 // Main handler function
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
     // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -359,7 +359,7 @@ export default async function handler(req, res) {
                 console.log('Found episode:', episodeData.id);
 
                 // Load episode torrent data
-                const episodeFileData = loadEpisodeData(episodeData.id);
+                const episodeFileData = await loadEpisodeData(episodeData.id);
                 if (!episodeFileData || !episodeFileData.streams || episodeFileData.streams.length === 0) {
                     console.log('No stream data for episode:', episodeData.id);
                     return res.json({ streams: [] });
