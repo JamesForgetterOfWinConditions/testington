@@ -2,7 +2,7 @@
 
 // Torbox API configuration
 const TORBOX_API_URL = 'https://api.torbox.app/v1/api';
-// API key will be provided via URL parameter instead of environment variable
+const TORBOX_API_KEY = process.env.TORBOX_API_KEY;
 
 // Simple episode data registry
 const episodeRegistry = {
@@ -92,15 +92,15 @@ function loadEpisodeData(episodeId) {
 }
 
 // Simple Torbox request function using fetch
-async function torboxRequest(endpoint, apiKey, method = 'GET', data = null) {
-    if (!apiKey) {
-        throw new Error('Torbox API key not provided');
+async function torboxRequest(endpoint, method = 'GET', data = null) {
+    if (!TORBOX_API_KEY) {
+        throw new Error('Torbox API key not configured');
     }
 
     const config = {
         method,
         headers: {
-            'Authorization': `Bearer ${apiKey}`,
+            'Authorization': `Bearer ${TORBOX_API_KEY}`,
             'Content-Type': 'application/json'
         }
     };
@@ -124,9 +124,9 @@ async function torboxRequest(endpoint, apiKey, method = 'GET', data = null) {
 }
 
 // Get or create torrent in Torbox and return stream URL
-async function getTorboxStream(infoHash, apiKey, fileIdx = 0) {
-    if (!apiKey) {
-        console.log('No Torbox API key provided');
+async function getTorboxStream(infoHash, fileIdx = 0) {
+    if (!TORBOX_API_KEY) {
+        console.log('No Torbox API key configured');
         return null;
     }
 
@@ -134,7 +134,7 @@ async function getTorboxStream(infoHash, apiKey, fileIdx = 0) {
         console.log('Getting Torbox stream for hash:', infoHash, 'fileIdx:', fileIdx);
         
         // First, check if torrent already exists
-        const torrents = await torboxRequest('/torrents/mylist', apiKey);
+        const torrents = await torboxRequest('/torrents/mylist');
         let existingTorrent = torrents.data?.find(t => t.hash === infoHash);
 
         if (!existingTorrent) {
@@ -150,7 +150,7 @@ async function getTorboxStream(infoHash, apiKey, fileIdx = 0) {
             const addResult = await fetch(`${TORBOX_API_URL}/torrents/createtorrent`, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${apiKey}`,
+                    'Authorization': `Bearer ${TORBOX_API_KEY}`,
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
                 body: formData.toString()
@@ -175,7 +175,7 @@ async function getTorboxStream(infoHash, apiKey, fileIdx = 0) {
                             attempts++;
                             
                             console.log(`Checking torrent list, attempt ${attempts}...`);
-                            const updatedTorrents = await torboxRequest('/torrents/mylist', apiKey);
+                            const updatedTorrents = await torboxRequest('/torrents/mylist');
                             existingTorrent = updatedTorrents.data?.find(t => 
                                 t.hash === infoHash || 
                                 t.hash === infoHash.toLowerCase() || 
@@ -226,7 +226,7 @@ async function getTorboxStream(infoHash, apiKey, fileIdx = 0) {
             }
             
             // Use the correct endpoint format with query parameters
-            const downloadUrl = `${TORBOX_API_URL}/torrents/requestdl?token=${apiKey}&torrent_id=${existingTorrent.id}&file_id=${targetFileId}`;
+            const downloadUrl = `${TORBOX_API_URL}/torrents/requestdl?token=${TORBOX_API_KEY}&torrent_id=${existingTorrent.id}&file_id=${targetFileId}`;
             console.log('Requesting download URL:', downloadUrl);
             
             const downloadResponse = await fetch(downloadUrl);
