@@ -66,25 +66,34 @@ const seriesCatalog = {
     ]
 };
 
-// One Pace series metadata with episodes
-const onePaceMeta = {
-    "meta": {
-        "id": "pp_onepace",
-        "type": "series",
-        "name": "One Pace",
-        "poster": "https://i.pinimg.com/originals/eb/85/c4/eb85c4376b474030b80afa80ad1cd13a.jpg",
-        "genres": ["Animation", "Comedy", "Adventure", "Action"],
-        "description": "One Pace is a fan project that recuts the One Piece anime in an endeavor to bring it more in line with the pacing of the original manga by Eiichiro Oda.",
-        "director": ["Toei Animation"],
-        "logo": "https://onepace.net/_next/static/media/logo.0bbcd6da.svg",
-        "background": "https://wallpaperaccess.com/full/17350.jpg",
-        "videos": [
-            { "season": 1, "episode": 1, "id": "RO_1", "title": "Romance Dawn, the Dawn of an Adventure" },
-            { "season": 1, "episode": 2, "id": "RO_2", "title": "Romance Dawn, Enter the Great Pirate Era" },
-            { "season": 1, "episode": 3, "id": "RO_3", "title": "Romance Dawn, Defeat the Pirate Ganzack" }
-        ]
+// Function to load One Pace metadata from file
+async function loadOnePaceMeta() {
+    try {
+        const fs = require('fs').promises;
+        const path = require('path');
+        
+        const filePath = path.join(process.cwd(), 'pp_onepace.json');
+        const fileContent = await fs.readFile(filePath, 'utf8');
+        return JSON.parse(fileContent);
+    } catch (error) {
+        console.error('Error loading pp_onepace.json:', error.message);
+        // Fallback to basic structure
+        return {
+            "meta": {
+                "id": "pp_onepace",
+                "type": "series",
+                "name": "One Pace",
+                "poster": "https://i.pinimg.com/originals/eb/85/c4/eb85c4376b474030b80afa80ad1cd13a.jpg",
+                "genres": ["Animation", "Comedy", "Adventure", "Action"],
+                "description": "One Pace is a fan project that recuts the One Piece anime.",
+                "director": ["Toei Animation"],
+                "logo": "https://onepace.net/_next/static/media/logo.0bbcd6da.svg",
+                "background": "https://wallpaperaccess.com/full/17350.jpg",
+                "videos": []
+            }
+        };
     }
-};
+}
 
 // Function to load episode data
 function loadEpisodeData(episodeId) {
@@ -314,6 +323,7 @@ export default async function handler(req, res) {
         // Meta endpoint
         if (fullPath === 'meta/series/pp_onepace.json') {
             console.log('Serving meta');
+            const onePaceMeta = await loadOnePaceMeta();
             return res.json(onePaceMeta);
         }
 
@@ -327,6 +337,7 @@ export default async function handler(req, res) {
                 
                 // Handle both formats: "pp_onepace:1:1" and direct episode IDs like "RO_1"
                 let episodeData;
+                const onePaceMeta = await loadOnePaceMeta();
                 
                 if (id.includes(':')) {
                     // Standard format: pp_onepace:season:episode
