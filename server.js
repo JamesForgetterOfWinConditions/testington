@@ -158,7 +158,8 @@ async function getTorboxStream(infoHash, fileIdx = 0) {
             // Create URLSearchParams for form data (works better in Node.js)
             const formData = new URLSearchParams();
             formData.append('magnet', magnetLink);
-            formData.append('seed', '1');
+// uncomment to set seeding to auto. Commented out seeding defaults to user's settings            
+//          formData.append('seed', '1');
             
             console.log('Creating torrent with magnet:', magnetLink);
             
