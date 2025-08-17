@@ -88,9 +88,9 @@ async function loadOnePaceMeta() {
 }
 
 // Function to load episode data
-// function loadEpisodeData(episodeId) {
-//     return episodeRegistry[episodeId] || null;
-// }
+function loadEpisodeData(episodeId) {
+    return episodeRegistry[episodeId] || null;
+}
 
 // Simple Torbox request function using fetch
 async function torboxRequest(endpoint, method = 'GET', data = null) {
@@ -141,12 +141,26 @@ async function getTorboxStream(infoHash, fileIdx = 0) {
         if (!existingTorrent) {
             console.log('Torrent not found, adding to Torbox...');
             
+            // Create a proper magnet link with trackers
+            const trackers = [
+                'http://nyaa.tracker.wf:7777/announce',
+                'udp://open.stealth.si:80/announce',
+                'udp://tracker.opentrackr.org:1337/announce',
+                'udp://exodus.desync.com:6969/announce',
+                'udp://tracker.torrent.eu.org:451/announce',
+                'udp://tracker.moeking.me:6969/announce',
+                'udp://tracker.dler.org:6969/announce',
+                'udp://opentracker.i2p.rocks:6969/announce'
+            ];
+            
+            const magnetLink = `magnet:?xt=urn:btih:${infoHash}&${trackers.map(tracker => `tr=${encodeURIComponent(tracker)}`).join('&')}`;
+            
             // Create URLSearchParams for form data (works better in Node.js)
             const formData = new URLSearchParams();
-            formData.append('magnet', `magnet:?xt=urn:btih:${infoHash}`);
+            formData.append('magnet', magnetLink);
             formData.append('seed', '1');
             
-            console.log('Creating torrent with magnet:', `magnet:?xt=urn:btih:${infoHash}`);
+            console.log('Creating torrent with magnet:', magnetLink);
             
             const addResult = await fetch(`${TORBOX_API_URL}/torrents/createtorrent`, {
                 method: 'POST',
